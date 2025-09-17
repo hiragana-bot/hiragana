@@ -59,22 +59,38 @@ async function main() {
     accessSecret: process.env.X_ACCESS_SECRET,
   });
 
-  const text = dailyUnique3Distinct();    // その日固定・3文字すべて異なる
-
-  // 投稿
+    // 投稿
   const res = await client.v2.tweet(text);
   const newId = res.data.id;
   console.log('tweeted:', text);
 
-  // 最新をピン留め（前日分があれば外す）
-  const me = await client.v2.me({ 'user.fields': 'pinned_tweet_id' });
+  // 自分のユーザーIDを取得
+  const me = await client.v2.me();
   const userId = me.data.id;
-  const pinned = me.data.pinned_tweet_id;
+
+  // 旧ピンを取得（ユーザー情報に pinned_tweet_id が含まれない場合もあるので再取得）
+  let pinned;
+  try {
+    const meDetail = await client.v2.user(userId, { 'user.fields': 'pinned_tweet_id' });
+    pinned = meDetail.data?.pinned_tweet_id;
+  } catch (_) {}
+
+  // 旧ピン解除
   if (pinned && pinned !== newId) {
-    try { await client.v2.unpinTweet(userId, pinned); } catch { /* 既に外れている等は無視 */ }
+    try {
+      await client.v2.delete(`users/${userId}/pinned_tweets/${pinned}`);
+    } catch (_) { /* エラーは無視 */ }
   }
-  await client.v2.pinTweet(userId, newId);
-  console.log('pinned:', newId);
+
+  // 新しいツイートをピン留め
+  try {
+    await client.v2.post(`users/${userId}/pinned_tweets`, { tweet_id: newId });
+    console.log('pinned:', newId);
+  } catch (e) {
+    console.error('failed to pin:', e);
+  }
+
+
 }
 
 await main();

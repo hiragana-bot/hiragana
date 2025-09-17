@@ -40,7 +40,7 @@ async function main() {
     accessSecret: process.env.X_ACCESS_SECRET,
   });
 
-  const text = randomAlpha3();
+  const text = randomAlpha3Distinct();
 
   // 自分のユーザーID
   const me = await client.v2.me();

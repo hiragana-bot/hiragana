@@ -2,12 +2,12 @@ import { TwitterApi } from 'twitter-api-v2';
 
 // 小文字アルファベット3文字を完全ランダム（NGなし）
 const LETTERS = 'abcdefghijklmnopqrstuvwxyz';
-function randomAlpha3() {
-  let s = '';
-  for (let i = 0; i < 3; i++) {
-    s += LETTERS[Math.floor(Math.random() * LETTERS.length)];
-  }
-  return s;
+function randomAlpha3Distinct() {
+  const pick = () => LETTERS[Math.floor(Math.random() * LETTERS.length)];
+  let a = pick(), b = pick(), c = pick();
+  while (b === a) b = pick();
+  while (c === a || c === b) c = pick();
+  return a + b + c;  // 3文字すべて異なる
 }
 
 // ピン留め（v2のRESTを直接叩く）

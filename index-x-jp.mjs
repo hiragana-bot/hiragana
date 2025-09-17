@@ -1,6 +1,6 @@
 import { TwitterApi } from 'twitter-api-v2';
 
-/** 濁点・半濁点を含むひらがな（小書き文字は除外） */
+/** 濁点・半濁点を含むひらがな（小書きは除外） */
 const HIRA = [...(
   'あいうえお' +
   'かきくけこ' + 'がぎぐげご' +
@@ -12,7 +12,7 @@ const HIRA = [...(
   'やゆよ' +
   'らりるれろ' +
   'わをん' +
-  'ゔ'               // う゛（ゔ）も対象
+  'ゔ'
 )];
 
 /** JSTの“日インデックス”（開始日からの経過日） */
@@ -28,22 +28,21 @@ function jstDayIndex() {
 }
 
 /**
- * 3文字すべて異なる & 日替わり一意
- * N個から重複なし順列（N*(N-1)*(N-2) 通り）に 1対1対応させる。
+ * 3文字すべて異なる & 日替わり一意（重複なし）
+ * N*(N-1)*(N-2) 通りの順列に日数を1対1で対応させる。
  */
 function dailyUnique3Distinct() {
   const N = HIRA.length;
-  const P = N * (N - 1) * (N - 2);       // 全順列数（3文字・重複なし）
-  // 擬似シャッフル（線形合同）で見た目を散らす（A は P と互いに素）
-  const A = 11, B = 13;
+  const P = N * (N - 1) * (N - 2); // 全順列数
+  const A = 11, B = 13;            // 擬似シャッフル係数（Pと互いに素）
+
   let x = (A * (jstDayIndex() % P) + B) % P;
 
-  // 混合基数で 3 インデックスへ（重複なしに展開）
+  // 混合基数で重複なしに展開
   const i0 = x % N;                      x = Math.floor(x / N);
   let i1 = x % (N - 1);                  x = Math.floor(x / (N - 1));
   if (i1 >= i0) i1 += 1;                 // i0 を飛ばす
   let i2 = x % (N - 2);
-  // i0, i1 を飛ばす
   const a = Math.min(i0, i1), b = Math.max(i0, i1);
   if (i2 >= a) i2 += 1;
   if (i2 >= b) i2 += 1;
@@ -59,38 +58,39 @@ async function main() {
     accessSecret: process.env.X_ACCESS_SECRET,
   });
 
-    // 投稿
+  // ← これが抜けていた！
+  const text = dailyUnique3Distinct();    // その日固定・3文字すべて異なる
+
+  // 投稿
   const res = await client.v2.tweet(text);
   const newId = res.data.id;
   console.log('tweeted:', text);
 
-  // 自分のユーザーIDを取得
+  // 自分のユーザーID取得
   const me = await client.v2.me();
   const userId = me.data.id;
 
-  // 旧ピンを取得（ユーザー情報に pinned_tweet_id が含まれない場合もあるので再取得）
+  // 旧ピンを取得（pinned_tweet_idのために詳細取得）
   let pinned;
   try {
     const meDetail = await client.v2.user(userId, { 'user.fields': 'pinned_tweet_id' });
     pinned = meDetail.data?.pinned_tweet_id;
   } catch (_) {}
 
-  // 旧ピン解除
+  // 旧ピン解除（失敗は無視）
   if (pinned && pinned !== newId) {
     try {
       await client.v2.delete(`users/${userId}/pinned_tweets/${pinned}`);
-    } catch (_) { /* エラーは無視 */ }
+    } catch (_) {}
   }
 
-  // 新しいツイートをピン留め
+  // 新しいツイートをピン留め（失敗はログだけ）
   try {
     await client.v2.post(`users/${userId}/pinned_tweets`, { tweet_id: newId });
     console.log('pinned:', newId);
   } catch (e) {
-    console.error('failed to pin:', e);
+    console.error('failed to pin:', e?.data ?? e?.message ?? e);
   }
-
-
 }
 
 await main();

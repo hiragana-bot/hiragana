@@ -27,27 +27,43 @@ function jstDayIndex() {
   return Math.floor((todayJst.getTime() - startJst.getTime()) / 86_400_000);
 }
 
-/**
- * 3文字すべて異なる & 日替わり一意（重複なし）
- * N*(N-1)*(N-2) 通りの順列に日数を1対1で対応させる。
- */
+/** 3文字すべて異なる & 日替わり一意（重複なし） */
 function dailyUnique3Distinct() {
   const N = HIRA.length;
-  const P = N * (N - 1) * (N - 2); // 全順列数
-  const A = 11, B = 13;            // 擬似シャッフル係数（Pと互いに素）
-
+  const P = N * (N - 1) * (N - 2);
+  const A = 11, B = 13;                   // 見た目シャッフル
   let x = (A * (jstDayIndex() % P) + B) % P;
 
-  // 混合基数で重複なしに展開
   const i0 = x % N;                      x = Math.floor(x / N);
   let i1 = x % (N - 1);                  x = Math.floor(x / (N - 1));
-  if (i1 >= i0) i1 += 1;                 // i0 を飛ばす
+  if (i1 >= i0) i1 += 1;
   let i2 = x % (N - 2);
   const a = Math.min(i0, i1), b = Math.max(i0, i1);
   if (i2 >= a) i2 += 1;
   if (i2 >= b) i2 += 1;
 
   return HIRA[i0] + HIRA[i1] + HIRA[i2];
+}
+
+async function pinTweetById(client, userId, tweetId) {
+  // 既存ピン取得
+  let pinned;
+  try {
+    const meDetail = await client.v2.user(userId, { 'user.fields': 'pinned_tweet_id' });
+    pinned = meDetail.data?.pinned_tweet_id;
+  } catch (_) {}
+
+  // 旧ピン解除
+  if (pinned && pinned !== tweetId) {
+    try { await client.v2.delete(`users/${userId}/pinned_tweets/${pinned}`); } catch (_) {}
+  }
+  // 新ピン
+  try {
+    await client.v2.post(`users/${userId}/pinned_tweets`, { tweet_id: tweetId });
+    console.log('pinned:', tweetId);
+  } catch (e) {
+    console.error('failed to pin:', e?.data ?? e?.message ?? e);
+  }
 }
 
 async function main() {
@@ -58,39 +74,42 @@ async function main() {
     accessSecret: process.env.X_ACCESS_SECRET,
   });
 
-  // ← これが抜けていた！
-  const text = dailyUnique3Distinct();    // その日固定・3文字すべて異なる
+  const text = dailyUnique3Distinct();
 
-  // 投稿
-  const res = await client.v2.tweet(text);
-  const newId = res.data.id;
-  console.log('tweeted:', text);
-
-  // 自分のユーザーID取得
+  // ユーザーID取得（重複時のフォールバックで使う）
   const me = await client.v2.me();
   const userId = me.data.id;
 
-  // 旧ピンを取得（pinned_tweet_idのために詳細取得）
-  let pinned;
+  let newId = null;
   try {
-    const meDetail = await client.v2.user(userId, { 'user.fields': 'pinned_tweet_id' });
-    pinned = meDetail.data?.pinned_tweet_id;
-  } catch (_) {}
-
-  // 旧ピン解除（失敗は無視）
-  if (pinned && pinned !== newId) {
-    try {
-      await client.v2.delete(`users/${userId}/pinned_tweets/${pinned}`);
-    } catch (_) {}
-  }
-
-  // 新しいツイートをピン留め（失敗はログだけ）
-  try {
-    await client.v2.post(`users/${userId}/pinned_tweets`, { tweet_id: newId });
-    console.log('pinned:', newId);
+    // 通常は投稿
+    const res = await client.v2.tweet(text);
+    newId = res.data.id;
+    console.log('tweeted:', text);
   } catch (e) {
-    console.error('failed to pin:', e?.data ?? e?.message ?? e);
+    const dup = e?.data?.detail && String(e.data.detail).includes('duplicate');
+    if (!dup) throw e; // 別エラーはそのまま投げる
+
+    console.log('duplicate detected, searching existing tweet…');
+    // 直近のツイートから同文を探す（読取は極力少なく）
+    try {
+      const tl = await client.v2.userTimeline(userId, { max_results: 10, exclude: ['replies', 'retweets'] });
+      const hit = tl.tweets?.find(t => t.text === text);
+      if (hit) {
+        newId = hit.id;
+        console.log('found existing tweet id:', newId);
+      } else {
+        console.log('existing tweet not found; skip pin.');
+        return;
+      }
+    } catch (er) {
+      console.error('timeline fetch failed:', er?.data ?? er?.message ?? er);
+      return;
+    }
   }
+
+  // ピン留め処理
+  await pinTweetById(client, userId, newId);
 }
 
 await main();

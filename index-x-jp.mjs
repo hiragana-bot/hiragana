@@ -1,29 +1,25 @@
 import { TwitterApi } from 'twitter-api-v2';
 
-// 小文字アルファベット3文字を完全ランダム（NGなし）
+// 英小文字3文字（重複なし）
 const LETTERS = 'abcdefghijklmnopqrstuvwxyz';
 function randomAlpha3Distinct() {
   const pick = () => LETTERS[Math.floor(Math.random() * LETTERS.length)];
   let a = pick(), b = pick(), c = pick();
   while (b === a) b = pick();
   while (c === a || c === b) c = pick();
-  return a + b + c;  // 3文字すべて異なる
+  return a + b + c;
 }
 
-// ピン留め（v2のRESTを直接叩く）
+// ピン留め（REST直叩き）
 async function pinTweetById(client, userId, tweetId) {
-  // 現ピン取得
   let pinned;
   try {
     const meDetail = await client.v2.user(userId, { 'user.fields': 'pinned_tweet_id' });
     pinned = meDetail.data?.pinned_tweet_id;
-  } catch (_) {}
-
-  // 旧ピン解除（あれば）
+  } catch {}
   if (pinned && pinned !== tweetId) {
-    try { await client.v2.delete(`users/${userId}/pinned_tweets/${pinned}`); } catch (_) {}
+    try { await client.v2.delete(`users/${userId}/pinned_tweets/${pinned}`); } catch {}
   }
-  // 新規ピン
   try {
     await client.v2.post(`users/${userId}/pinned_tweets`, { tweet_id: tweetId });
     console.log('pinned:', tweetId);
@@ -46,7 +42,7 @@ async function main() {
   const me = await client.v2.me();
   const userId = me.data.id;
 
-  // 投稿（同日同文で403なら既存をピンに回す）
+  // 投稿（重複403は既存をピンに切替）
   let newId = null;
   try {
     const res = await client.v2.tweet(text);
@@ -55,10 +51,9 @@ async function main() {
   } catch (e) {
     const dup = e?.data?.detail && String(e.data.detail).includes('duplicate');
     if (!dup) throw e;
-
     console.log('duplicate detected, searching existing tweet…');
     try {
-      const tl = await client.v2.userTimeline(userId, { max_results: 10, exclude: ['replies', 'retweets'] });
+      const tl = await client.v2.userTimeline(userId, { max_results: 10, exclude: ['replies','retweets'] });
       const hit = tl.tweets?.find(t => t.text === text);
       if (!hit) { console.log('existing tweet not found; skip pin.'); return; }
       newId = hit.id;
@@ -69,7 +64,6 @@ async function main() {
     }
   }
 
-  // ピン留め
   await pinTweetById(client, userId, newId);
 }
 

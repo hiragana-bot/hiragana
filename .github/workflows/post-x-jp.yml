@@ -1,7 +1,7 @@
-name: post-x-horoscope
+name: post-x-jp
 on:
-schedule:
-  - cron: '0 13 * * *'   # 13:00 UTC = 22:00 JST
+  schedule:
+    - cron: '0 13 * * *'   # 13:00 UTC = 22:00 JST
   workflow_dispatch:
 
 jobs:
@@ -10,9 +10,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: '20' }
-      - run: npm install twitter-api-v2
-      - run: node index-x-horoscope.mjs
+        with:
+          node-version: '20'
+      - run: npm ci || npm i
+      - run: node index-x-jp.mjs
         env:
           X_APP_KEY: ${{ secrets.X_APP_KEY }}
           X_APP_SECRET: ${{ secrets.X_APP_SECRET }}

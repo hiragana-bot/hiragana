@@ -1,8 +1,8 @@
 {
-  "name": "hiragana-bot",
+  "name": "ai-abc3-bot",
   "private": true,
   "type": "module",
   "dependencies": {
-    "@atproto/api": "^0.13.14"
+    "twitter-api-v2": "^1.17.2"
   }
 }

@@ -1,7 +1,12 @@
 name: post-x-jp
 on:
   schedule:
-    - cron: '0 13 * * *'   # 13:00 UTC = 22:00 JST
+    # 平日(月〜金) 昼12時JST = UTC 3時
+    - cron: '0 3 * * 1-5'
+    # 土日 昼12時JST = UTC 3時
+    - cron: '0 3 * * 0,6'
+    # 土日 深夜0時JST = UTC 前日15時（土0時=金UTC15時, 日0時=土UTC15時 → UTC金土=5,6）
+    - cron: '0 15 * * 5,6'
   workflow_dispatch:
 jobs:
   post:

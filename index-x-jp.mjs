@@ -1,32 +1,36 @@
 import { TwitterApi } from 'twitter-api-v2';
 
-// 英小文字3文字（重複なし）
-const LETTERS = 'abcdefghijklmnopqrstuvwxyz';
-function randomAlpha3Distinct() {
-  const pick = () => LETTERS[Math.floor(Math.random() * LETTERS.length)];
-  let a = pick(), b = pick(), c = pick();
-  while (b === a) b = pick();
-  while (c === a || c === b) c = pick();
-  return a + b + c;
+// ① 楽天で売れ筋を1件取得
+async function fetchRakutenItem(genreId) {
+  const appId = process.env.RAKUTEN_APP_ID;
+  const affId = process.env.RAKUTEN_AFFILIATE_ID;
+  const url = `https://app.rakuten.co.jp/services/api/IchibaItem/Ranking/20220601`
+    + `?applicationId=${appId}&affiliateId=${affId}&genreId=${genreId}&page=1`;
+  const res = await fetch(url);
+  const data = await res.json();
+  // ランキング上位からランダムに1件（毎日同じにならないように）
+  const items = data.Items.slice(0, 10);
+  const item = items[Math.floor(Math.random() * items.length)].Item;
+  return {
+    name: item.itemName,
+    price: item.itemPrice,
+    reviewCount: item.reviewCount,
+    reviewAverage: item.reviewAverage,
+    url: item.affiliateUrl || item.itemUrl, // アフィリンク
+  };
 }
 
-// ピン留め（REST直叩き）
-async function pinTweetById(client, userId, tweetId) {
-  let pinned;
-  try {
-    const meDetail = await client.v2.user(userId, { 'user.fields': 'pinned_tweet_id' });
-    pinned = meDetail.data?.pinned_tweet_id;
-  } catch {}
-  if (pinned && pinned !== tweetId) {
-    try { await client.v2.delete(`users/${userId}/pinned_tweets/${pinned}`); } catch {}
+// ② 投稿文を生成（AIキーが無ければテンプレにフォールバック）
+async function buildText(item) {
+  if (process.env.ANTHROPIC_API_KEY) {
+    // ここをAI生成に差し替え（後述）
   }
-  try {
-    await client.v2.post(`users/${userId}/pinned_tweets`, { tweet_id: tweetId });
-    console.log('pinned:', tweetId);
-  } catch (e) {
-    console.error('failed to pin:', e?.data ?? e?.message ?? e);
-  }
+  // テンプレ版（まずこれで動かす）
+  const star = item.reviewAverage ? `★${item.reviewAverage}（${item.reviewCount}件）` : '';
+  return `【楽天で人気】${truncate(item.name, 60)}\n${item.price.toLocaleString()}円 ${star}\n${item.url}`;
 }
+
+function truncate(s, n) { return s.length > n ? s.slice(0, n) + '…' : s; }
 
 async function main() {
   const client = new TwitterApi({
@@ -36,35 +40,12 @@ async function main() {
     accessSecret: process.env.X_ACCESS_SECRET,
   });
 
-  const text = randomAlpha3Distinct();
+  const GENRE_ID = process.env.RAKUTEN_GENRE_ID || '0'; // 0=総合ランキング
+  const item = await fetchRakutenItem(GENRE_ID);
+  const text = await buildText(item);
 
-  // 自分のユーザーID
-  const me = await client.v2.me();
-  const userId = me.data.id;
-
-  // 投稿（重複403は既存をピンに切替）
-  let newId = null;
-  try {
-    const res = await client.v2.tweet(text);
-    newId = res.data.id;
-    console.log('tweeted:', text);
-  } catch (e) {
-    const dup = e?.data?.detail && String(e.data.detail).includes('duplicate');
-    if (!dup) throw e;
-    console.log('duplicate detected, searching existing tweet…');
-    try {
-      const tl = await client.v2.userTimeline(userId, { max_results: 10, exclude: ['replies','retweets'] });
-      const hit = tl.tweets?.find(t => t.text === text);
-      if (!hit) { console.log('existing tweet not found; skip pin.'); return; }
-      newId = hit.id;
-      console.log('found existing tweet id:', newId);
-    } catch (er) {
-      console.error('timeline fetch failed:', er?.data ?? er?.message ?? er);
-      return;
-    }
-  }
-
-  await pinTweetById(client, userId, newId);
+  const res = await client.v2.tweet(text);
+  console.log('tweeted:', res.data.id, text);
 }
 
 await main();

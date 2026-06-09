@@ -12,7 +12,7 @@ async function fetchRakutenItem(genreId) {
     formatVersion: '2',
   });
   // ← 新ドメイン・新パス
-  const url = `https://openapi.rakuten.co.jp/ichibams/api/IchibaItem/Ranking/20220601?${params}`;
+  const url = `https://openapi.rakuten.co.jp/ichibaranking/api/IchibaItem/Ranking/20220601?${params}`;
 
   const res = await fetch(url, {
     headers: {

@@ -1,36 +1,51 @@
 import { TwitterApi } from 'twitter-api-v2';
 
-// ① 楽天で売れ筋を1件取得
+// ① 楽天で売れ筋を1件取得（2026年新仕様）
 async function fetchRakutenItem(genreId) {
-  const appId = process.env.RAKUTEN_APP_ID;
-  const affId = process.env.RAKUTEN_AFFILIATE_ID;
-  const url = `https://app.rakuten.co.jp/services/api/IchibaItem/Ranking/20220601`
-    + `?applicationId=${appId}&affiliateId=${affId}&genreId=${genreId}&page=1`;
-  const res = await fetch(url);
+  const params = new URLSearchParams({
+    applicationId: process.env.RAKUTEN_APP_ID,
+    accessKey: process.env.RAKUTEN_ACCESS_KEY,   // ← 新仕様で必須
+    affiliateId: process.env.RAKUTEN_AFFILIATE_ID,
+    genreId: genreId,
+    page: '1',
+    format: 'json',
+    formatVersion: '2',
+  });
+  // ← 新ドメイン・新パス
+  const url = `https://openapi.rakuten.co.jp/ichibams/api/IchibaItem/Ranking/20220601?${params}`;
+
+  const res = await fetch(url, {
+    headers: {
+      'Referer': 'https://www.rakuten.co.jp/',
+      'Origin': 'https://www.rakuten.co.jp',
+      'User-Agent': 'Mozilla/5.0',
+    },
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Rakuten API ${res.status}: ${body}`);
+  }
   const data = await res.json();
-  // ランキング上位からランダムに1件（毎日同じにならないように）
-  const items = data.Items.slice(0, 10);
-  const item = items[Math.floor(Math.random() * items.length)].Item;
+
+  // formatVersion:2 だと Items が直接配列
+  const items = (data.Items || []).slice(0, 10);
+  if (items.length === 0) throw new Error('No items returned');
+  const item = items[Math.floor(Math.random() * items.length)];
   return {
     name: item.itemName,
     price: item.itemPrice,
     reviewCount: item.reviewCount,
     reviewAverage: item.reviewAverage,
-    url: item.affiliateUrl || item.itemUrl, // アフィリンク
+    url: item.affiliateUrl || item.itemUrl,
   };
 }
 
-// ② 投稿文を生成（AIキーが無ければテンプレにフォールバック）
-async function buildText(item) {
-  if (process.env.ANTHROPIC_API_KEY) {
-    // ここをAI生成に差し替え（後述）
-  }
-  // テンプレ版（まずこれで動かす）
+function truncate(s, n) { return s.length > n ? s.slice(0, n) + '…' : s; }
+
+function buildText(item) {
   const star = item.reviewAverage ? `★${item.reviewAverage}（${item.reviewCount}件）` : '';
   return `【楽天で人気】${truncate(item.name, 60)}\n${item.price.toLocaleString()}円 ${star}\n${item.url}`;
 }
-
-function truncate(s, n) { return s.length > n ? s.slice(0, n) + '…' : s; }
 
 async function main() {
   const client = new TwitterApi({
@@ -40,12 +55,12 @@ async function main() {
     accessSecret: process.env.X_ACCESS_SECRET,
   });
 
-  const GENRE_ID = process.env.RAKUTEN_GENRE_ID || '0'; // 0=総合ランキング
+  const GENRE_ID = process.env.RAKUTEN_GENRE_ID || '0'; // 0=総合
   const item = await fetchRakutenItem(GENRE_ID);
-  const text = await buildText(item);
+  const text = buildText(item);
 
   const res = await client.v2.tweet(text);
-  console.log('tweeted:', res.data.id, text);
+  console.log('tweeted:', res.data.id, '\n', text);
 }
 
 await main();

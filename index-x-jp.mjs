@@ -36,15 +36,20 @@ async function fetchRakutenItem(genreId) {
     url: item.affiliateUrl || item.itemUrl,
   };
 }
-// 先頭の【...】を全部除去して読みやすくする
+// 煽り・記号を除いて商品名の核を取り出す
 function cleanItemName(name) {
-  return name.replace(/^(?:【[^】]*】\s*)+/, '').trim();
+  let s = name;
+  s = s.replace(/【[^】]*】/g, '');                        // 【...】を全部除去
+  s = s.replace(/[(（][^)）]*[)）]/g, '');                  // (...)（...）を除去
+  s = s.replace(/^[^一-龥ぁ-んァ-ンa-zA-Z]*[!！]\s*/g, ''); // 先頭の価格煽り＋！を除去
+  s = s.replace(/\s+/g, ' ').trim();                       // 余分な空白を整理
+  return s;
 }
 function truncate(s, n) { return s.length > n ? s.slice(0, n) + '…' : s; }
 function buildText(item) {
-  const star = item.reviewAverage ? `★${item.reviewAverage}（${item.reviewCount}件）` : '';
-  const name = truncate(cleanItemName(item.name), 50);
-  return `【PR】楽天で人気の商品✨\n${name}\n${item.price.toLocaleString()}円 ${star}\n${item.url}\n#楽天市場 #PR`;
+  const star = item.reviewAverage ? `★${item.reviewAverage}（${item.reviewCount}件）の高評価👏` : '';
+  const name = truncate(cleanItemName(item.name), 40);
+  return `【PR】楽天で人気の商品✨\n${name}\n${star}\n${item.url}\n#楽天市場 #PR`;
 }
 async function main() {
   const client = new TwitterApi({
